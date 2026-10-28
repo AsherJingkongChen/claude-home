@@ -126,15 +126,29 @@ pub fn human_line(vitals: &Vitals, now: &Zoned) -> String {
             (now.timestamp().as_second() - started.as_second()) / (vitals.compactions as i64 + 1)
         })
         .unwrap_or(0);
-    format!(
-        "On {} {}, ate {}k tokens, {}, {}, awake {} on average.",
-        model_name(&vitals.model),
-        capitalize(&vitals.effort),
+    let on = on_clause(&[model_name(&vitals.model), capitalize(&vitals.effort)]);
+    capitalize(&format!(
+        "{on}ate {}k tokens, {}, {}, awake {} on average.",
         vitals.context_tokens / 1000,
         how_often("burped", vitals.turns),
         how_often("slept", vitals.compactions),
         hours_minutes(awake),
-    )
+    ))
+}
+
+/// `On opus 5.5 High, ` from the non-empty parts, or "" when every part is empty, as in
+/// a session with no transcript yet.
+fn on_clause(parts: &[String]) -> String {
+    let words: Vec<&str> = parts
+        .iter()
+        .map(String::as_str)
+        .filter(|part| !part.is_empty())
+        .collect();
+    if words.is_empty() {
+        String::new()
+    } else {
+        format!("On {}, ", words.join(" "))
+    }
 }
 
 /// For the model: `On high effort, 20% of context left, 147 turns in, compacted once.`
@@ -149,9 +163,14 @@ pub fn model_line(vitals: &Vitals) -> String {
     } else {
         format!("{} turns", vitals.turns)
     };
-    format!(
-        "On {} effort, {left} of context left, {turns} in, {}.",
-        vitals.effort,
+    let effort = if vitals.effort.is_empty() {
+        String::new()
+    } else {
+        format!("{} effort", vitals.effort)
+    };
+    capitalize(&format!(
+        "{}{left} of context left, {turns} in, {}.",
+        on_clause(&[effort]),
         how_often("compacted", vitals.compactions),
-    )
+    ))
 }
