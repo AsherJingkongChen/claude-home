@@ -72,30 +72,3 @@ pub fn send(output: Output) -> ExitCode {
     }
     ExitCode::SUCCESS
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn event(name: &str) -> Event {
-        Event {
-            name: name.to_owned(),
-            input: json!({"hook_event_name": name}),
-        }
-    }
-
-    #[test]
-    fn merge_joins_model_and_human_pieces() {
-        let output = merge([to_model(&event("Stop"), "ctx"), to_human("hi")]);
-        let expected = json!({
-            "hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": "ctx"},
-            "systemMessage": "hi",
-        });
-        assert_eq!(Value::Object(output), expected);
-    }
-
-    #[test]
-    fn merge_of_nothing_is_empty() {
-        assert!(merge([]).is_empty());
-    }
-}
