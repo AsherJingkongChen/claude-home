@@ -26,7 +26,7 @@ pub struct Vitals {
 }
 
 /// Read the vitals of a session. The counts live on a card in
-/// `~/.claude/cache/claude-home/vitals/<session_id>.json`, so each call reads only the rows the
+/// `~/.claude/hooks/cache/<session_id>.json`, so each call reads only the rows the
 /// transcript gained since the last call. A missing transcript gives zeros. Rows that no
 /// longer parse, or many rows with no assistant usage, mean the format changed: that
 /// panics with a message, which Claude Code shows as a hook error and moves on.
@@ -109,7 +109,7 @@ fn card_path(session_id: &str) -> PathBuf {
         session_id
     };
     Path::new(&std::env::var("HOME").unwrap_or_default())
-        .join(".claude/cache/claude-home/vitals")
+        .join(".claude/hooks/cache")
         .join(format!("{name}.json"))
 }
 
