@@ -13,10 +13,16 @@
 //! | [`to_model`] | `hookSpecificOutput.additionalContext` | the model, on its next call  |
 //! | [`to_human`] | `systemMessage`                        | the person at the terminal   |
 //! | none         | nothing on stdout                      | nobody                       |
+//!
+//! Lines in either direction open with [`header`]; [`vitals`] writes what follows it.
+
+pub mod vitals;
 
 use std::io::Read;
+use std::path::Path;
 use std::process::ExitCode;
 
+use jiff::Zoned;
 use serde_json::{Map, Value, json};
 
 /// One JSON object of hook output, or a piece of one.
@@ -46,6 +52,29 @@ pub fn read_event() -> Event {
 /// A string field of the event input, or "" when it is missing.
 pub fn text<'a>(event: &'a Event, key: &str) -> &'a str {
     event.input[key].as_str().unwrap_or("")
+}
+
+/// The shared opening of every line: `[Stop]@claude-home-bf6f8f (29 01:50:09 +08)`.
+/// The project is where the session started (`CLAUDE_PROJECT_DIR`), so a `cd` does not move it.
+pub fn header(event: &Event, now: &Zoned) -> String {
+    let root =
+        std::env::var("CLAUDE_PROJECT_DIR").unwrap_or_else(|_| text(event, "cwd").to_owned());
+    let project = Path::new(&root)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let id: String = text(event, "session_id").chars().take(6).collect();
+    let offset = now.offset().seconds();
+    let zone = if offset % 3600 == 0 {
+        format!("{:+03}", offset / 3600)
+    } else {
+        now.strftime("%:z").to_string()
+    };
+    format!(
+        "[{}]@{project}-{id} ({} {zone})",
+        event.name,
+        now.strftime("%d %H:%M:%S")
+    )
 }
 
 /// Context for the model, attached to its next call.
