@@ -9,7 +9,7 @@ use jiff::Zoned;
 fn main() -> ExitCode {
     let event = read_event();
     let now = Zoned::now();
-    let vitals = read_vitals(text(&event, "transcript_path"));
+    let vitals = read_vitals(text(&event, "session_id"), text(&event, "transcript_path"));
     let opening = header(&event, &now);
     send(merge([
         to_model(&event, &format!("{opening}: {}", model_line(&vitals))),

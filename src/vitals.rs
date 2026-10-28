@@ -1,12 +1,19 @@
 //! Vitals: what a session has been through, read from its transcript, and the two
 //! sentences that report it, one for the person and one for the model.
 
-use std::path::Path;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 
 use jiff::{Timestamp, Zoned};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const CONTEXT_WINDOW: u64 = 1_000_000;
+const TURN_MARKER: &str = r#""subtype":"turn_duration""#;
+const COMPACT_MARKER: &str = r#""subtype":"compact_boundary""#;
+const ASSISTANT_MARKER: &str = r#""type":"assistant""#;
+/// Rows read with no assistant usage among them before the format counts as changed.
+const DRIFT_ROWS: u64 = 100;
 
 pub struct Vitals {
     pub model: String,
@@ -18,49 +25,119 @@ pub struct Vitals {
     pub started: Option<Timestamp>,
 }
 
-/// Read the vitals from a transcript file. A missing or empty transcript gives zeros.
-pub fn read_vitals(transcript_path: &str) -> Vitals {
-    let text = std::fs::read_to_string(transcript_path).unwrap_or_default();
-    let started = text
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .find_map(|row| {
-            row["timestamp"]
-                .as_str()
-                .and_then(|stamp| stamp.parse().ok())
-        });
-    let turns = count_rows(&text, r#""subtype":"turn_duration""#);
-    let compactions = count_rows(&text, r#""subtype":"compact_boundary""#);
-    let last = text
-        .lines()
-        .rev()
-        .filter(|line| line.contains(r#""type":"assistant""#))
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .find(|row| row["type"] == "assistant" && row["message"]["usage"].is_object())
-        .unwrap_or_default();
-    let usage = &last["message"]["usage"];
-    let context_tokens = [
-        "input_tokens",
-        "cache_creation_input_tokens",
-        "cache_read_input_tokens",
-    ]
-    .iter()
-    .map(|key| usage[key].as_u64().unwrap_or(0))
-    .sum();
-    let model = last["message"]["model"].as_str().unwrap_or("").to_owned();
-    Vitals {
-        compact_window: compact_window(&model),
-        effort: last["effort"].as_str().unwrap_or("").to_owned(),
-        model,
-        context_tokens,
-        turns,
-        compactions,
-        started,
+/// Read the vitals of a session. The counts live on a card in
+/// `~/.claude/cache/claude-home/vitals/<session_id>.json`, so each call reads only the rows the
+/// transcript gained since the last call. A missing transcript gives zeros. Rows that no
+/// longer parse, or many rows with no assistant usage, mean the format changed: that
+/// panics with a message, which Claude Code shows as a hook error and moves on.
+pub fn read_vitals(session_id: &str, transcript_path: &str) -> Vitals {
+    let Ok(mut transcript) = File::open(transcript_path) else {
+        return vitals_from(&json!({}));
+    };
+    let length = transcript
+        .metadata()
+        .expect("transcript should have metadata")
+        .len();
+    let card_path = card_path(session_id);
+    let card: Value = std::fs::read_to_string(&card_path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .filter(|card: &Value| {
+            card["offset"]
+                .as_u64()
+                .is_some_and(|offset| offset <= length)
+        })
+        .unwrap_or_else(|| json!({"offset": 0}));
+    let offset = card["offset"].as_u64().unwrap_or(0);
+    transcript
+        .seek(SeekFrom::Start(offset))
+        .expect("transcript should be seekable");
+    let mut fresh = String::new();
+    transcript
+        .read_to_string(&mut fresh)
+        .expect("transcript should be UTF-8 text");
+    let complete = fresh.rfind('\n').map_or(0, |end| end + 1);
+    let mut card = fresh[..complete].lines().fold(card, absorb);
+    card["offset"] = json!(offset + complete as u64);
+    let rows = card["rows"].as_u64().unwrap_or(0);
+    if rows >= DRIFT_ROWS && card["model"].is_null() {
+        panic!("transcript has {rows} rows but no assistant usage; its format may have changed");
     }
+    save_card(&card_path, &card);
+    vitals_from(&card)
 }
 
-fn count_rows(text: &str, marker: &str) -> u64 {
-    text.lines().filter(|line| line.contains(marker)).count() as u64
+/// Fold one transcript row into the card.
+fn absorb(mut card: Value, line: &str) -> Value {
+    card["rows"] = json!(card["rows"].as_u64().unwrap_or(0) + 1);
+    if line.contains(TURN_MARKER) {
+        card["turns"] = json!(card["turns"].as_u64().unwrap_or(0) + 1);
+    }
+    if line.contains(COMPACT_MARKER) {
+        card["compactions"] = json!(card["compactions"].as_u64().unwrap_or(0) + 1);
+    }
+    let needs_start = card["started"].is_null();
+    if needs_start || line.contains(ASSISTANT_MARKER) {
+        let row: Value = serde_json::from_str(line)
+            .unwrap_or_else(|error| panic!("transcript row should be JSON: {error}"));
+        if needs_start && row["timestamp"].is_string() {
+            card["started"] = row["timestamp"].clone();
+        }
+        let usage = &row["message"]["usage"];
+        if row["type"] == "assistant" && row["isSidechain"] != true && usage.is_object() {
+            card["model"] = row["message"]["model"].clone();
+            card["effort"] = row["effort"].clone();
+            card["context_tokens"] = json!(
+                [
+                    "input_tokens",
+                    "cache_creation_input_tokens",
+                    "cache_read_input_tokens"
+                ]
+                .iter()
+                .map(|key| usage[key].as_u64().unwrap_or(0))
+                .sum::<u64>()
+            );
+        }
+    }
+    card
+}
+
+fn card_path(session_id: &str) -> PathBuf {
+    let name = if session_id.is_empty() {
+        "unknown"
+    } else {
+        session_id
+    };
+    Path::new(&std::env::var("HOME").unwrap_or_default())
+        .join(".claude/cache/claude-home/vitals")
+        .join(format!("{name}.json"))
+}
+
+/// Write the card through a temporary file and a rename, so a parallel hook never reads
+/// half a card.
+fn save_card(path: &Path, card: &Value) {
+    let directory = path
+        .parent()
+        .expect("the card path should have a directory");
+    std::fs::create_dir_all(directory).expect("the card directory should be creatable");
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temporary, card.to_string()).expect("the card should be writable");
+    std::fs::rename(&temporary, path).expect("the card should be renamable into place");
+}
+
+fn vitals_from(card: &Value) -> Vitals {
+    let model = card["model"].as_str().unwrap_or("").to_owned();
+    Vitals {
+        compact_window: compact_window(&model),
+        effort: card["effort"].as_str().unwrap_or("").to_owned(),
+        model,
+        context_tokens: card["context_tokens"].as_u64().unwrap_or(0),
+        turns: card["turns"].as_u64().unwrap_or(0),
+        compactions: card["compactions"].as_u64().unwrap_or(0),
+        started: card["started"]
+            .as_str()
+            .and_then(|stamp| stamp.parse().ok()),
+    }
 }
 
 /// The token count where auto compaction would fire: the env override, then the
