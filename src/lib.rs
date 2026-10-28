@@ -111,10 +111,15 @@ pub fn to_model(moment: &Moment, sentence: &str) -> Output {
     )
 }
 
+/// The text of a message for the person: header, vitals line, then the sentence.
+/// Events that drop JSON output (SessionEnd) print this to stderr instead.
+pub fn human_message(moment: &Moment, sentence: &str) -> String {
+    compose(moment, &human_line(&moment.vitals, &moment.now), sentence)
+}
+
 /// A message for the person at the terminal; the model does not see it.
 pub fn to_human(moment: &Moment, sentence: &str) -> Output {
-    let message = compose(moment, &human_line(&moment.vitals, &moment.now), sentence);
-    object(json!({"systemMessage": message}))
+    object(json!({"systemMessage": human_message(moment, sentence)}))
 }
 
 fn object(value: Value) -> Output {

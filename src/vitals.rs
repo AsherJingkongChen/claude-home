@@ -84,7 +84,11 @@ fn absorb(mut card: Value, line: &str) -> Value {
             card["started"] = row["timestamp"].clone();
         }
         let usage = &row["message"]["usage"];
-        if row["type"] == "assistant" && row["isSidechain"] != true && usage.is_object() {
+        if row["type"] == "assistant"
+            && row["isSidechain"] != true
+            && row["message"]["model"] != "<synthetic>"
+            && usage.is_object()
+        {
             card["model"] = row["message"]["model"].clone();
             card["effort"] = row["effort"].clone();
             card["context_tokens"] = json!(
