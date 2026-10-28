@@ -2,9 +2,9 @@
 
 use std::process::ExitCode;
 
-use claude_home::{Event, Reply};
+use claude_home::{Output, read_event, send};
 
 fn main() -> ExitCode {
-    let event = Event::read();
-    Reply::default().send(&event)
+    read_event();
+    send(Output::new())
 }
