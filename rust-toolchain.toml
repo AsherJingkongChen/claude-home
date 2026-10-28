@@ -1,5 +1,5 @@
-# Pinned so that a build is the same build everywhere; moving it is a commit of its own.
+# Latest stable: nothing here needs nightly, and the machine's toolchain is kept up to date.
 [toolchain]
-channel = "1.98.1"
+channel = "stable"
 profile = "minimal"
 components = ["rustfmt", "clippy"]
