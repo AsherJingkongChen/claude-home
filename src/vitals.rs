@@ -138,14 +138,12 @@ pub fn human_line(vitals: &Vitals, now: &Zoned) -> String {
 }
 
 /// For the model: `On high effort, 20% of context left, 147 turns in, compacted once.`
-/// Context left is floored to tens, so the model never overestimates its room.
+/// Context left steps 100%, 90%, ..., 10%: the used share floored to tens, taken from 100.
+/// A coarse step keeps the model from counting tokens; 10% is the cue to wrap up.
 pub fn model_line(vitals: &Vitals) -> String {
     let used = vitals.context_tokens.min(vitals.compact_window);
-    let left_percent = (vitals.compact_window - used) * 100 / vitals.compact_window.max(1);
-    let left = match left_percent / 10 * 10 {
-        0 => "under 10%".to_owned(),
-        decile => format!("{decile}%"),
-    };
+    let used_percent = (used * 100 / vitals.compact_window.max(1)).min(99);
+    let left = format!("{}%", 100 - used_percent / 10 * 10);
     let turns = if vitals.turns == 1 {
         "1 turn".to_owned()
     } else {

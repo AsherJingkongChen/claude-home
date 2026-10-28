@@ -54,7 +54,7 @@ pub fn text<'a>(event: &'a Event, key: &str) -> &'a str {
     event.input[key].as_str().unwrap_or("")
 }
 
-/// The shared opening of every line: `[Stop]@claude-home-bf6f8f (29 01:50:09 +08)`.
+/// The shared opening of every line: `[Stop]@claude-home-bf6f8f (10-29 01:50:09 +08)`.
 /// The project is where the session started (`CLAUDE_PROJECT_DIR`), so a `cd` does not move it.
 pub fn header(event: &Event, now: &Zoned) -> String {
     let root =
@@ -73,7 +73,7 @@ pub fn header(event: &Event, now: &Zoned) -> String {
     format!(
         "[{}]@{project}-{id} ({} {zone})",
         event.name,
-        now.strftime("%d %H:%M:%S")
+        now.strftime("%m-%d %H:%M:%S")
     )
 }
 
