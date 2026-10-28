@@ -4,9 +4,9 @@
 //! A binary knows its event, so it knows who reads each field it returns; event-specific
 //! fields (a Stop block, a PreToolUse deny) are written in that binary.
 //!
-//! This library holds only what every binary shares, as plain functions:
-//! [`read_event`] and [`send`] are the only ones that touch stdin or stdout, and the rest
-//! build output pieces that [`merge`] joins into the one JSON object Claude Code accepts.
+//! This library is the station every binary shares. [`read_moment`] and [`send`] are its
+//! two ends, the only functions that touch the outside world; everything between them is a
+//! plain function from values to values.
 //!
 //! | piece        | field                                  | reader                       |
 //! |--------------|----------------------------------------|------------------------------|
@@ -14,7 +14,8 @@
 //! | [`to_human`] | `systemMessage`                        | the person at the terminal   |
 //! | none         | nothing on stdout                      | nobody                       |
 //!
-//! Lines in either direction open with [`header`]; [`vitals`] writes what follows it.
+//! Both pieces open with the same [`header`] and a line from [`vitals`], then the binary's
+//! own sentence.
 
 pub mod vitals;
 
@@ -25,6 +26,8 @@ use std::process::ExitCode;
 use jiff::Zoned;
 use serde_json::{Map, Value, json};
 
+use vitals::{Vitals, human_line, model_line, read_vitals};
+
 /// One JSON object of hook output, or a piece of one.
 pub type Output = Map<String, Value>;
 
@@ -34,9 +37,17 @@ pub struct Event {
     pub input: Value,
 }
 
-/// Read the event from stdin. Panics with a message when stdin is not a JSON object with
-/// `hook_event_name`, which Claude Code reports as a non-blocking error.
-pub fn read_event() -> Event {
+/// Everything a hook reads from outside, gathered once: the event, the clock, the vitals.
+pub struct Moment {
+    pub event: Event,
+    pub now: Zoned,
+    pub vitals: Vitals,
+}
+
+/// Read the event from stdin, the clock, and the session's vitals. Panics with a message
+/// when stdin is not a JSON object with `hook_event_name`, which Claude Code reports as a
+/// non-blocking error.
+pub fn read_moment() -> Moment {
     let mut raw = String::new();
     std::io::stdin()
         .read_to_string(&mut raw)
@@ -44,9 +55,17 @@ pub fn read_event() -> Event {
     let input: Value = serde_json::from_str(&raw).expect("stdin should be one JSON object");
     let name = input["hook_event_name"]
         .as_str()
-        .expect("the event should carry hook_event_name")
-        .to_owned();
-    Event { name, input }
+        .expect("the event should carry hook_event_name");
+    let event = Event {
+        name: name.into(),
+        input,
+    };
+    let vitals = read_vitals(text(&event, "session_id"), text(&event, "transcript_path"));
+    Moment {
+        event,
+        now: Zoned::now(),
+        vitals,
+    }
 }
 
 /// A string field of the event input, or "" when it is missing.
@@ -56,37 +75,50 @@ pub fn text<'a>(event: &'a Event, key: &str) -> &'a str {
 
 /// The shared opening of every line: `[Stop]@claude-home-bf6f8f (10-29 01:50:09 +08)`.
 /// The project is where the session started (`CLAUDE_PROJECT_DIR`), so a `cd` does not move it.
-pub fn header(event: &Event, now: &Zoned) -> String {
-    let root =
-        std::env::var("CLAUDE_PROJECT_DIR").unwrap_or_else(|_| text(event, "cwd").to_owned());
+pub fn header(moment: &Moment) -> String {
+    let event = &moment.event;
+    let root = std::env::var("CLAUDE_PROJECT_DIR").unwrap_or_else(|_| text(event, "cwd").into());
     let project = Path::new(&root)
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("");
     let id: String = text(event, "session_id").chars().take(6).collect();
-    let offset = now.offset().seconds();
-    let zone = if offset % 3600 == 0 {
-        format!("{:+03}", offset / 3600)
-    } else {
-        now.strftime("%:z").to_string()
+    let offset = moment.now.offset().seconds();
+    let zone = match offset % 3600 {
+        0 => format!("{:+03}", offset / 3600),
+        _ => moment.now.strftime("%:z").to_string(),
     };
     format!(
         "[{}]@{project}-{id} ({} {zone})",
         event.name,
-        now.strftime("%m-%d %H:%M:%S")
+        moment.now.strftime("%m-%d %H:%M:%S")
     )
 }
 
-/// Context for the model, attached to its next call.
-pub fn to_model(event: &Event, text: &str) -> Output {
-    let piece =
-        json!({"hookSpecificOutput": {"hookEventName": event.name, "additionalContext": text}});
-    piece.as_object().cloned().unwrap_or_default()
+/// `header: line`, then the binary's own sentence on the next line when it has one.
+fn compose(moment: &Moment, line: &str, sentence: &str) -> String {
+    match sentence {
+        "" => format!("{}: {line}", header(moment)),
+        _ => format!("{}: {line}\n{sentence}", header(moment)),
+    }
 }
 
-/// A line for the person at the terminal; the model does not see it.
-pub fn to_human(text: &str) -> Output {
-    Output::from_iter([("systemMessage".to_owned(), Value::from(text))])
+/// Context for the model, attached to its next call.
+pub fn to_model(moment: &Moment, sentence: &str) -> Output {
+    let context = compose(moment, &model_line(&moment.vitals), sentence);
+    object(
+        json!({"hookSpecificOutput": {"hookEventName": moment.event.name, "additionalContext": context}}),
+    )
+}
+
+/// A message for the person at the terminal; the model does not see it.
+pub fn to_human(moment: &Moment, sentence: &str) -> Output {
+    let message = compose(moment, &human_line(&moment.vitals, &moment.now), sentence);
+    object(json!({"systemMessage": message}))
+}
+
+fn object(value: Value) -> Output {
+    value.as_object().cloned().unwrap_or_default()
 }
 
 /// Join output pieces into one object. A later piece wins on a repeated key.
