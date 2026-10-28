@@ -199,7 +199,7 @@ fn hours_minutes(seconds: i64) -> String {
 }
 
 /// For the person: `On opus 5.5 High, ate 640k tokens, burped 147 times, slept once,
-/// awake 14h54m on average.`
+/// alive 14h54m on average.`
 pub fn human_line(vitals: &Vitals, now: &Zoned) -> String {
     let awake = vitals
         .started
@@ -209,7 +209,7 @@ pub fn human_line(vitals: &Vitals, now: &Zoned) -> String {
         .unwrap_or(0);
     let on = on_clause(&[model_name(&vitals.model), capitalize(&vitals.effort)]);
     capitalize(&format!(
-        "{on}ate {}k tokens, {}, {}, awake {} on average.",
+        "{on}ate {}k tokens, {}, {}, alive {} on average.",
         vitals.context_tokens / 1000,
         how_often("burped", vitals.turns),
         how_often("slept", vitals.compactions),
