@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use claude_home::{read_moment, send, text, to_human};
 
 /// The `reason` values Claude Code documents for SessionEnd, as a sentence each.
-fn label(reason: &str) -> &'static str {
+fn translate(reason: &str) -> &'static str {
     match reason {
         "clear" => "Cleared manually.",
         "resume" => "Left temporarily...",
@@ -20,6 +20,6 @@ fn label(reason: &str) -> &'static str {
 
 fn main() -> ExitCode {
     let moment = read_moment();
-    let reason = label(text(&moment.event, "reason"));
+    let reason = translate(text(&moment.event, "reason"));
     send(to_human(&moment, reason))
 }
