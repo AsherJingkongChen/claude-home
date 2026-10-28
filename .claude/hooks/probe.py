@@ -1,8 +1,11 @@
 """Record every hook call verbatim, so we can see what a hook receives.
 
 The probe never changes Claude Code's behavior: it prints nothing and
-always exits 0. Each call appends one JSON line to log/probe.jsonl at
-the repository root.
+always exits 0. Each call appends one line to two files under log/ at
+the repository root, in the same order:
+
+- stdin.jsonl: the event exactly as Claude Code sent it on stdin.
+- probe.jsonl: what the probe observed around it (time, argv, cwd, env).
 """
 
 from datetime import datetime, timezone
@@ -13,7 +16,7 @@ import sys
 
 __all__ = ["main"]
 
-LOG_PATH = Path(__file__).resolve().parents[2] / "log" / "probe.jsonl"
+LOG_DIR = Path(__file__).resolve().parents[2] / "log"
 SECRET_MARKERS = ("KEY", "SECRET", "TOKEN")
 STRING_LIMIT = 20_000
 
@@ -43,13 +46,16 @@ def main() -> None:
         "env": {key: redact(key, value) for key, value in sorted(os.environ.items()) if key.startswith("CLAUDE")},
         "stdin_bytes": len(raw.encode()),
     }
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        record["input"] = clip(json.loads(raw))
+        event = json.loads(raw)
+        with (LOG_DIR / "stdin.jsonl").open("a") as log:
+            log.write(json.dumps(event, ensure_ascii=False) + "\n")
+        record["event"] = event.get("hook_event_name")
     except json.JSONDecodeError as error:
         record["input_error"] = str(error)
         record["input_raw"] = clip(raw)
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_PATH.open("a") as log:
+    with (LOG_DIR / "probe.jsonl").open("a") as log:
         log.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
