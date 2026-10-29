@@ -15,10 +15,10 @@ use std::process::ExitCode;
 use claude_home::{human_message, read_moment, text};
 
 /// The `reason` values Claude Code documents for SessionEnd, as a sentence each.
-fn translate(reason: &str) -> &'static str {
+fn explain(reason: &str) -> &'static str {
     match reason {
         "clear" => "Cleared manually.",
-        "resume" => "Left temporarily.",
+        "resume" => "",
         "logout" => "Logged out.",
         "prompt_input_exit" => "Exited manually.",
         _ => "Ended.",
@@ -27,16 +27,20 @@ fn translate(reason: &str) -> &'static str {
 
 fn main() -> ExitCode {
     let moment = read_moment();
-    let reason = translate(text(&moment.event, "reason"));
+    let reason = explain(text(&moment.event, "reason"));
+    if reason.is_empty() {
+        return ExitCode::SUCCESS;
+    }
     let message = human_message(&moment, reason);
     let written = terminals()
         .into_iter()
         .any(|path| write_line(&path, &message));
     if written {
-        return ExitCode::SUCCESS;
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("\n{message}");
+        ExitCode::from(2)
     }
-    eprintln!("{message}");
-    ExitCode::from(2)
 }
 
 /// Terminals to try, in order: the hook's own, then the one Claude Code writes to.
