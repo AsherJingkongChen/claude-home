@@ -8,14 +8,19 @@
 //! two ends, the only functions that touch the outside world; everything between them is a
 //! plain function from values to values.
 //!
-//! | piece        | field                                  | reader                       |
-//! |--------------|----------------------------------------|------------------------------|
-//! | [`to_model`] | `hookSpecificOutput.additionalContext` | the model, on its next call  |
-//! | [`to_human`] | `systemMessage`                        | the person at the terminal   |
-//! | none         | nothing on stdout                      | nobody                       |
+//! Output goes four ways. Every piece is placed by [`top`] or [`specific`], and [`merge`]
+//! joins the pieces into the one object Claude Code reads.
 //!
-//! Both pieces open with the same [`header`] and a line from [`vitals`], then the binary's
-//! own sentence, usually the same one for both readers.
+//! | direction | piece                         | field                                       |
+//! |-----------|-------------------------------|---------------------------------------------|
+//! | person    | [`to_human`]                  | `systemMessage`                             |
+//! | model     | [`to_model`]                  | `hookSpecificOutput.additionalContext`      |
+//! | system    | [`top`], [`specific`]         | `decision`, `continue`, `watchPaths`, ...   |
+//! | air       | none                          | nothing on stdout                           |
+//!
+//! [`for_human`] and [`for_model`] write the text: the same [`header`], a line from
+//! [`vitals`] for that reader, then the binary's own sentence. Output that is not JSON
+//! (exit code 2, a terminal write at SessionEnd) stays in the binary that needs it.
 
 pub mod vitals;
 
@@ -24,7 +29,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use jiff::Zoned;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use vitals::{Vitals, human_line, model_line, read_vitals};
 
@@ -105,32 +110,57 @@ fn compose(moment: &Moment, line: &str, sentence: &str) -> String {
     }
 }
 
-/// Context for the model, attached to its next call.
-pub fn to_model(moment: &Moment, sentence: &str) -> Output {
-    let context = compose(moment, &model_line(&moment.vitals), sentence);
-    object(
-        json!({"hookSpecificOutput": {"hookEventName": moment.event.name, "additionalContext": context}}),
-    )
+/// Text for the model: header, the model's vitals line, then the sentence.
+pub fn for_model(moment: &Moment, sentence: &str) -> String {
+    compose(moment, &model_line(&moment.vitals), sentence)
 }
 
-/// The text of a message for the person: header, vitals line, then the sentence.
-/// Events that drop JSON output (SessionEnd) write this to a terminal instead.
-pub fn human_message(moment: &Moment, sentence: &str) -> String {
+/// Text for the person: header, the person's vitals line, then the sentence.
+pub fn for_human(moment: &Moment, sentence: &str) -> String {
     compose(moment, &human_line(&moment.vitals, &moment.now), sentence)
 }
 
+/// A top-level output field, such as `systemMessage`, `decision`, or `continue`.
+pub fn top(field: &str, value: impl Into<Value>) -> Output {
+    Output::from_iter([(field.to_owned(), value.into())])
+}
+
+/// A field inside `hookSpecificOutput`, such as `additionalContext`, `watchPaths`, or
+/// `permissionDecision`, tagged with the event name Claude Code expects beside it.
+pub fn specific(moment: &Moment, field: &str, value: impl Into<Value>) -> Output {
+    let inner = Output::from_iter([
+        ("hookEventName".to_owned(), moment.event.name.clone().into()),
+        (field.to_owned(), value.into()),
+    ]);
+    top("hookSpecificOutput", inner)
+}
+
 /// A message for the person at the terminal; the model does not see it.
-pub fn to_human(moment: &Moment, sentence: &str) -> Output {
-    object(json!({"systemMessage": human_message(moment, sentence)}))
+pub fn to_human(text: impl Into<String>) -> Output {
+    top("systemMessage", text.into())
 }
 
-fn object(value: Value) -> Output {
-    value.as_object().cloned().unwrap_or_default()
+/// Context for the model, attached to its next call.
+pub fn to_model(moment: &Moment, text: impl Into<String>) -> Output {
+    specific(moment, "additionalContext", text.into())
 }
 
-/// Join output pieces into one object. A later piece wins on a repeated key.
+/// Join output pieces into one object. Objects under the same key, such as two
+/// `hookSpecificOutput` pieces, are joined field by field; otherwise a later piece wins.
 pub fn merge(pieces: impl IntoIterator<Item = Output>) -> Output {
-    pieces.into_iter().flatten().collect()
+    pieces.into_iter().fold(Output::new(), join)
+}
+
+fn join(mut whole: Output, piece: Output) -> Output {
+    for (key, value) in piece {
+        match (whole.get_mut(&key), value) {
+            (Some(Value::Object(inner)), Value::Object(more)) => inner.extend(more),
+            (_, value) => {
+                whole.insert(key, value);
+            }
+        }
+    }
+    whole
 }
 
 /// Print the output, if any, and return the exit code to end the process with.

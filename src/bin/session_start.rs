@@ -4,7 +4,9 @@
 use std::process::ExitCode;
 
 use claude_home::vitals::hours_minutes;
-use claude_home::{Event, merge, read_moment, send, text, to_human, to_model};
+use claude_home::{
+    Event, for_human, for_model, merge, read_moment, send, text, to_human, to_model,
+};
 
 /// The `source` values Claude Code documents for SessionStart, as a sentence each.
 fn explain(source: &str) -> &'static str {
@@ -49,7 +51,7 @@ fn main() -> ExitCode {
         .collect::<Vec<_>>()
         .join(" ");
     send(merge([
-        to_human(&moment, &sentence),
-        to_model(&moment, &sentence),
+        to_human(for_human(&moment, &sentence)),
+        to_model(&moment, for_model(&moment, &sentence)),
     ]))
 }

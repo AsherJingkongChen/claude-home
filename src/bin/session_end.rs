@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use claude_home::{human_message, read_moment, text};
+use claude_home::{for_human, read_moment, text};
 
 /// The `reason` values Claude Code documents for SessionEnd, as a sentence each.
 fn explain(reason: &str) -> &'static str {
@@ -31,7 +31,7 @@ fn main() -> ExitCode {
     if reason.is_empty() {
         return ExitCode::SUCCESS;
     }
-    let message = human_message(&moment, reason);
+    let message = for_human(&moment, reason);
     let written = terminals()
         .into_iter()
         .any(|path| write_line(&path, &message));
