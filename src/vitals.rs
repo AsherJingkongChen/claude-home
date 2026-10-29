@@ -194,7 +194,8 @@ fn capitalize(word: &str) -> String {
         .unwrap_or_default()
 }
 
-fn hours_minutes(seconds: i64) -> String {
+/// `3h07m`.
+pub fn hours_minutes(seconds: i64) -> String {
     format!("{}h{:02}m", seconds / 3600, seconds % 3600 / 60)
 }
 

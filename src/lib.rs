@@ -15,7 +15,7 @@
 //! | none         | nothing on stdout                      | nobody                       |
 //!
 //! Both pieces open with the same [`header`] and a line from [`vitals`], then the binary's
-//! own sentence.
+//! own sentence, usually the same one for both readers.
 
 pub mod vitals;
 
@@ -73,8 +73,9 @@ pub fn text<'a>(event: &'a Event, key: &str) -> &'a str {
     event.input[key].as_str().unwrap_or("")
 }
 
-/// The shared opening of every line: `[Stop]@claude-home-bf6f8f (10-29 01:50:09 +08)`.
+/// The shared opening of every message: `claude-home-bf6f8f2a (10-29 01:50:09 +08):`.
 /// The project is where the session started (`CLAUDE_PROJECT_DIR`), so a `cd` does not move it.
+/// The event name stays out: Claude Code already prefixes what the model reads with it.
 pub fn header(moment: &Moment) -> String {
     let event = &moment.event;
     let root = std::env::var("CLAUDE_PROJECT_DIR").unwrap_or_else(|_| text(event, "cwd").into());
@@ -82,24 +83,25 @@ pub fn header(moment: &Moment) -> String {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("");
-    let id: String = text(event, "session_id").chars().take(6).collect();
+    let id: String = text(event, "session_id").chars().take(8).collect();
     let offset = moment.now.offset().seconds();
     let zone = match offset % 3600 {
         0 => format!("{:+03}", offset / 3600),
         _ => moment.now.strftime("%:z").to_string(),
     };
     format!(
-        "[{}]@{project}-{id} ({} {zone})",
-        event.name,
+        "{project}-{id} ({} {zone}):",
         moment.now.strftime("%m-%d %H:%M:%S")
     )
 }
 
-/// `header: line`, then the binary's own sentence on the next line when it has one.
+/// `header line`, then the binary's own sentence on the next line when it has one.
+/// Claude Code prefixes both the model's context and the person's message with the event
+/// name (`SessionStart:startup says:`), so the event stays out.
 fn compose(moment: &Moment, line: &str, sentence: &str) -> String {
     match sentence {
-        "" => format!("{}: {line}", header(moment)),
-        _ => format!("{}: {line}\n{sentence}", header(moment)),
+        "" => format!("{} {line}", header(moment)),
+        _ => format!("{} {line}\n{sentence}", header(moment)),
     }
 }
 
@@ -112,7 +114,7 @@ pub fn to_model(moment: &Moment, sentence: &str) -> Output {
 }
 
 /// The text of a message for the person: header, vitals line, then the sentence.
-/// Events that drop JSON output (SessionEnd) print this to stderr instead.
+/// Events that drop JSON output (SessionEnd) write this to a terminal instead.
 pub fn human_message(moment: &Moment, sentence: &str) -> String {
     compose(moment, &human_line(&moment.vitals, &moment.now), sentence)
 }
