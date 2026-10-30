@@ -3,9 +3,9 @@
 
 use std::process::ExitCode;
 
-use claude_home::vitals::hours_minutes;
+use claude_home::vitals::{Vitals, hours_minutes};
 use claude_home::{
-    Event, for_human, for_model, merge, read_moment, send, text, to_human, to_model,
+    Event, Moment, for_human, for_model, merge, read_moment, send, text, to_human, to_model,
 };
 
 /// The `source` values Claude Code documents for SessionStart, as a sentence each.
@@ -44,8 +44,22 @@ fn details(event: &Event) -> Vec<String> {
     .collect()
 }
 
+/// SessionStart with source `compact` runs before Claude Code writes this compaction's
+/// boundary row, so the transcript counts one compaction short at that moment. The
+/// extra one lives only in this output; the card keeps counting rows.
+fn count_pending(moment: Moment) -> Moment {
+    let pending = u64::from(text(&moment.event, "source") == "compact");
+    Moment {
+        vitals: Vitals {
+            compactions: moment.vitals.compactions + pending,
+            ..moment.vitals
+        },
+        ..moment
+    }
+}
+
 fn main() -> ExitCode {
-    let moment = read_moment();
+    let moment = count_pending(read_moment());
     let sentence = std::iter::once(explain(text(&moment.event, "source")).to_owned())
         .chain(details(&moment.event))
         .collect::<Vec<_>>()
