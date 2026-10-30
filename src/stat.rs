@@ -178,31 +178,19 @@ fn percent(part: usize, whole: usize) -> usize {
     (part * 100 + whole / 2).checked_div(whole).unwrap_or(0)
 }
 
-/// Four lines, one per aspect:
-/// `Prompt: 782 bytes, 224 words, 19 lines.` / `Style: 1 motion, 12 words per line.` /
-/// `Language: 86% Han, 9% Latin, 5% Math.` / `Judgement: at least 1 question.`
-pub fn describe(name: &str, stat: &Stat) -> String {
+/// One sentence: `The human sent 782 bytes, 224 words, 19 lines, 1 motion, in 86% Han,
+/// 9% Latin, 5% Math, and asked at least 1 question.`
+pub fn describe(sender: &str, stat: &Stat) -> String {
     let words = stat.words();
-    let per_line = (words + stat.lines / 2).checked_div(stat.lines).unwrap_or(0);
-    [
-        format!(
-            "{name}: {}, {}, {}.",
-            amount(stat.bytes, "byte"),
-            amount(words, "word"),
-            amount(stat.lines, "line"),
-        ),
-        format!(
-            "Style: {}, {} per line.",
-            amount(stat.motions, "motion"),
-            amount(per_line, "word"),
-        ),
-        format!(
-            "Language: {}% Han, {}% Latin, {}% Math.",
-            percent(stat.han, words),
-            percent(stat.latin, words),
-            percent(stat.math, words),
-        ),
-        format!("Judgement: at least {}.", amount(stat.questions, "question")),
-    ]
-    .join("\n")
+    format!(
+        "The {sender} sent {}, {}, {}, {}, in {}% Han, {}% Latin, {}% Math, and asked at least {}.",
+        amount(stat.bytes, "byte"),
+        amount(words, "word"),
+        amount(stat.lines, "line"),
+        amount(stat.motions, "motion"),
+        percent(stat.han, words),
+        percent(stat.latin, words),
+        percent(stat.math, words),
+        amount(stat.questions, "question"),
+    )
 }
