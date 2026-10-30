@@ -9,10 +9,26 @@ use unicode_script::{Script, UnicodeScript};
 
 /// Clause ends: what Yilan's lines are cut at before a clause is judged as a question.
 const CLAUSE_ENDS: [char; 6] = ['?', '？', '!', '！', '。', '，'];
-/// Words that open a question when they open a clause, after an optional connective.
-const OPENERS: [&str; 9] = ["為什麼", "為何", "怎麼", "哪", "誰", "是不是", "要不要", "有沒有", "還是"];
+/// Question words, English beside Chinese, one meaning per row. A clause that opens with
+/// one asks, after an optional connective.
+const QUESTION_WORDS: [(&str, &[&str]); 7] = [
+    ("what", &["什麼"]),
+    ("why", &["為什麼", "為何"]),
+    ("how", &["怎麼", "如何"]),
+    ("where", &["哪裡", "哪邊"]),
+    ("when", &["何時"]),
+    ("who", &["誰"]),
+    ("which", &["哪個", "哪些", "哪一"]),
+];
+/// Yes-or-no questions: Chinese opens with A-not-A or 還是, English with an auxiliary
+/// before its subject.
+const YES_NO: [&str; 8] = ["是不是", "要不要", "有沒有", "會不會", "能不能", "可不可以", "是否", "還是"];
+const AUXILIARIES: [&str; 10] = ["is", "are", "do", "does", "did", "can", "could", "will", "would", "should"];
+const SUBJECTS: [&str; 7] = ["you", "we", "i", "they", "he", "she", "there"];
+/// A clause that opens by asking for a view asks wherever its question word sits:
+/// `你覺得 wtf vs wth 哪個更好`.
+const VIEW_ASKS: [&str; 2] = ["你覺得", "你認為"];
 const CONNECTIVES: [&str; 6] = ["那", "所以", "但", "嗯", "以及", "然後"];
-const WH_WORDS: [&str; 7] = ["what", "why", "how", "where", "who", "when", "which"];
 /// The 麼 of these words is not a question particle.
 const NOT_PARTICLE: [char; 5] = ['什', '怎', '這', '那', '多'];
 
@@ -130,16 +146,29 @@ fn asks(clause: &str) -> bool {
         .find_map(|word| clause.strip_prefix(word))
         .unwrap_or(clause)
         .trim_start();
-    let lower = clause.to_lowercase();
-    let wh = WH_WORDS.iter().any(|word| {
-        lower
-            .strip_prefix(word)
-            .is_some_and(|rest| !rest.starts_with(|character: char| character.is_ascii_alphabetic()))
+    let lower = opened.to_lowercase();
+    let wh = QUESTION_WORDS.iter().any(|(english, chinese)| {
+        opens_with_word(&lower, english) || chinese.iter().any(|word| opened.starts_with(word))
     });
-    clause.ends_with(['?', '？'])
-        || particle
-        || OPENERS.iter().any(|word| opened.starts_with(word))
-        || wh
+    let yes_no = YES_NO.iter().any(|word| opened.starts_with(word))
+        || AUXILIARIES.iter().any(|auxiliary| {
+            lower
+                .strip_prefix(auxiliary)
+                .and_then(|rest| rest.strip_prefix(' '))
+                .is_some_and(|rest| SUBJECTS.iter().any(|subject| opens_with_word(rest, subject)))
+        });
+    let view = VIEW_ASKS.iter().any(|word| opened.starts_with(word))
+        && QUESTION_WORDS
+            .iter()
+            .flat_map(|(_, chinese)| chinese.iter())
+            .any(|word| opened.contains(word));
+    clause.ends_with(['?', '？']) || particle || wh || yes_no || view
+}
+
+/// The text opens with this whole English word, not with a longer word it begins.
+fn opens_with_word(text: &str, word: &str) -> bool {
+    text.strip_prefix(word)
+        .is_some_and(|rest| !rest.starts_with(|character: char| character.is_ascii_alphabetic()))
 }
 
 pub fn stat(text: &str) -> Stat {
