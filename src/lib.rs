@@ -22,6 +22,7 @@
 //! [`vitals`] for that reader, then the binary's own sentence. Output that is not JSON
 //! (exit code 2, a terminal write at SessionEnd) stays in the binary that needs it.
 
+pub mod stat;
 pub mod vitals;
 
 use std::io::Read;

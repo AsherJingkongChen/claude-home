@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 jiff = "0.2.38"
 serde_json = "1"
+unicode-script = "0.5.8"
 
 # A hook is a fresh process on every event, so startup and size are the budget.
 # panic = "abort": no unwinding is needed, a panicking hook just exits non-zero,
