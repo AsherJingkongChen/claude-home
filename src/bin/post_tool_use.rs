@@ -9,11 +9,10 @@ use serde_json::Value;
 use claude_home::stat::amount;
 use claude_home::{Output, merge, read_moment, send, text, to_human, to_model};
 
-/// The path relative to the working directory when it lies inside it.
-fn relative<'a>(path: &'a str, cwd: &str) -> &'a str {
-    path.strip_prefix(cwd)
-        .and_then(|rest| rest.strip_prefix('/'))
-        .unwrap_or(path)
+/// The file name alone: the model knows which file it just touched, and the person sees
+/// the tool call, so the folders only lengthen the line.
+fn name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 /// `lines 29 to 35`, or `line 29` when the range is one line.
@@ -25,9 +24,9 @@ fn span(first: u64, last: u64) -> String {
 }
 
 /// `Read SKILL.md at lines 120 to 239 of 926.` Images, PDFs, and notebooks get nothing.
-fn read(response: &Value, cwd: &str) -> Option<String> {
+fn read(response: &Value) -> Option<String> {
     let file = &response["file"];
-    let path = relative(file["filePath"].as_str()?, cwd);
+    let path = name(file["filePath"].as_str()?);
     let start = file["startLine"].as_u64()?;
     let count = file["numLines"].as_u64()?;
     let total = file["totalLines"].as_u64()?;
@@ -39,8 +38,8 @@ fn read(response: &Value, cwd: &str) -> Option<String> {
 
 /// `Edited SKILL.md at lines 29 to 35, adding 7 lines and removing 6.` The range covers the
 /// changed lines only, numbered in the new file, not the context around them.
-fn edit(response: &Value, cwd: &str) -> Option<String> {
-    let path = relative(response["filePath"].as_str()?, cwd);
+fn edit(response: &Value) -> Option<String> {
+    let path = name(response["filePath"].as_str()?);
     let hunks = response["structuredPatch"].as_array()?;
     let mut added = 0;
     let mut removed = 0;
@@ -76,8 +75,8 @@ fn edit(response: &Value, cwd: &str) -> Option<String> {
 }
 
 /// `Created README.md with 120 lines.` or `Overwrote README.md with 120 lines.`
-fn write(response: &Value, cwd: &str) -> Option<String> {
-    let path = relative(response["filePath"].as_str()?, cwd);
+fn write(response: &Value) -> Option<String> {
+    let path = name(response["filePath"].as_str()?);
     let lines = amount(response["content"].as_str()?.lines().count(), "line");
     match response["type"].as_str()? {
         "create" => Some(format!("Created {path} with {lines}.")),
@@ -89,11 +88,10 @@ fn main() -> ExitCode {
     let moment = read_moment();
     let event = &moment.event;
     let response = &event.input["tool_response"];
-    let cwd = text(event, "cwd");
     let sentence = match text(event, "tool_name") {
-        "Read" => read(response, cwd),
-        "Edit" => edit(response, cwd),
-        "Write" => write(response, cwd),
+        "Read" => read(response),
+        "Edit" => edit(response),
+        "Write" => write(response),
         _ => None,
     };
     send(match sentence {
