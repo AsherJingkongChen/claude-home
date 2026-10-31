@@ -1,6 +1,6 @@
 [package]
 name = "claude-home"
-description = "Claude's home"
+description = "Claude's home."
 version = "0.0.1"
 edition = "2024"
 license = "MIT"

@@ -1,20 +1,23 @@
 # claude-home
 
-Claude Code hooks, one binary per event.
+> Claude's home.
+
+**Features:** Claude Code hooks (one binary per event).
 
 ## Install
 
-```
+```bash
 cargo install --path . --root ~/.claude/hooks
 ```
 
-Copy `"hooks"` from `.claude/settings.json` into `~/.claude/settings.json`.
+Plus, copy `"hooks"` from `.claude/settings.json` into `~/.claude/settings.json`.
 
 ## Uninstall
 
-```
+```bash
 cargo uninstall --root ~/.claude/hooks claude-home
-rm -r ~/.claude/projects/*/transcript
+rm -r ~/.claude/projects/*/transcript/latest/
 ```
 
-Remove those `"hooks"` entries from `~/.claude/settings.json`.
+Also, remove those `"hooks"` entries from `~/.claude/settings.json`.
+
