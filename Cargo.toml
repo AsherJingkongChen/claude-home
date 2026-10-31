@@ -3,7 +3,9 @@ name = "claude-home"
 description = "Claude's home"
 version = "0.0.1"
 edition = "2024"
+license = "MIT"
 publish = false
+repository = "https://github.com/AsherJingkongChen/claude-home"
 
 [dependencies]
 croner = { version = "4.0.2", default-features = false, features = ["jiff"] }
