@@ -45,13 +45,15 @@ fn details(event: &Event) -> Vec<String> {
 }
 
 /// SessionStart with source `compact` runs before Claude Code writes this compaction's
-/// boundary row, so the transcript counts one compaction short at that moment. The
-/// extra one lives only in this output; the card keeps counting rows.
+/// boundary row, so the transcript counts one compaction short at that moment, and its
+/// last usage is still the full context from before. The extra compaction and the
+/// emptied context live only in this output; the card keeps counting rows.
 fn count_pending(moment: Moment) -> Moment {
-    let pending = u64::from(text(&moment.event, "source") == "compact");
+    let compacted = text(&moment.event, "source") == "compact";
     Moment {
         vitals: Vitals {
-            compactions: moment.vitals.compactions + pending,
+            compactions: moment.vitals.compactions + u64::from(compacted),
+            context_tokens: if compacted { 0 } else { moment.vitals.context_tokens },
             ..moment.vitals
         },
         ..moment
