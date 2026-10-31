@@ -25,8 +25,8 @@ pub struct Vitals {
     pub started: Option<Timestamp>,
 }
 
-/// Read the vitals of a session. The counts live on a card in
-/// `~/.claude/hooks/cache/<session_id>.json`, so each call reads only the rows the
+/// Read the vitals of a session. The counts live on a card beside the transcript, in
+/// `transcript/latest/<session_id>.json`, so each call reads only the rows the
 /// transcript gained since the last call. A missing transcript gives zeros. Rows that no
 /// longer parse, or many rows with no assistant usage, mean the format changed: that
 /// panics with a message, which Claude Code shows as a hook error and moves on.
@@ -38,7 +38,7 @@ pub fn read_vitals(session_id: &str, transcript_path: &str) -> Vitals {
         .metadata()
         .expect("transcript should have metadata")
         .len();
-    let card_path = card_path(session_id);
+    let card_path = card_path(session_id, transcript_path);
     let card: Value = std::fs::read_to_string(&card_path)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
@@ -106,14 +106,19 @@ fn absorb(mut card: Value, line: &str) -> Value {
     card
 }
 
-fn card_path(session_id: &str) -> PathBuf {
+/// `transcript/latest/<session_id>.json` in the transcript's own project folder: a
+/// subfolder, so tools that list `<session_id>.jsonl` sessions never mistake it for one,
+/// and `.json`, since a card is one object.
+fn card_path(session_id: &str, transcript_path: &str) -> PathBuf {
     let name = if session_id.is_empty() {
         "unknown"
     } else {
         session_id
     };
-    Path::new(&std::env::var("HOME").unwrap_or_default())
-        .join(".claude/hooks/cache")
+    Path::new(transcript_path)
+        .parent()
+        .expect("an opened transcript should sit in a folder")
+        .join("transcript/latest")
         .join(format!("{name}.json"))
 }
 

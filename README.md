@@ -14,7 +14,7 @@ Copy `"hooks"` from `.claude/settings.json` into `~/.claude/settings.json`.
 
 ```
 cargo uninstall --root ~/.claude/hooks claude-home
-rm -r ~/.claude/hooks/cache
+rm -r ~/.claude/projects/*/transcript
 ```
 
 Remove those `"hooks"` entries from `~/.claude/settings.json`.
