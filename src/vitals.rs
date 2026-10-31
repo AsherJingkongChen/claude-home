@@ -14,6 +14,8 @@ const COMPACT_MARKER: &str = r#""subtype":"compact_boundary""#;
 const ASSISTANT_MARKER: &str = r#""type":"assistant""#;
 /// Rows read with no assistant usage among them before the format counts as changed.
 const DRIFT_ROWS: u64 = 100;
+/// How much of a transcript's end is read to find its `continued-in` row.
+const TAIL_BYTES: u64 = 4096;
 
 pub struct Vitals {
     pub model: String,
@@ -31,8 +33,14 @@ pub struct Vitals {
 /// longer parse, or many rows with no assistant usage, mean the format changed: that
 /// panics with a message, which Claude Code shows as a hook error and moves on.
 pub fn read_vitals(session_id: &str, transcript_path: &str) -> Vitals {
+    vitals_from(&updated_card(session_id, transcript_path))
+}
+
+/// The card of a session, brought up to date with the rows its transcript gained since the
+/// last call, and saved.
+fn updated_card(session_id: &str, transcript_path: &str) -> Value {
     let Ok(mut transcript) = File::open(transcript_path) else {
-        return vitals_from(&json!({}));
+        return json!({});
     };
     let length = transcript
         .metadata()
@@ -47,6 +55,7 @@ pub fn read_vitals(session_id: &str, transcript_path: &str) -> Vitals {
                 .as_u64()
                 .is_some_and(|offset| offset <= length)
         })
+        .or_else(|| inherited(session_id, transcript_path))
         .unwrap_or_else(|| json!({"offset": 0}));
     let offset = card["offset"].as_u64().unwrap_or(0);
     transcript
@@ -64,7 +73,77 @@ pub fn read_vitals(session_id: &str, transcript_path: &str) -> Vitals {
         panic!("transcript has {rows} rows but no assistant usage; its format may have changed");
     }
     save_card(&card_path, &card);
-    vitals_from(&card)
+    card
+}
+
+/// Where the card of a continued session starts. When Claude Code moves a conversation to a
+/// new session id, as an update does when it restarts the session, the old transcript ends
+/// with a `continued-in` row naming the new id, and the new transcript opens with a copy of
+/// the old one's tail that keeps each row's uuid. The new card is the old card, brought up
+/// to date, with its offset just past that copy, so no row is counted twice. None when no
+/// transcript in the folder was continued here.
+fn inherited(session_id: &str, transcript_path: &str) -> Option<Value> {
+    let marker = format!(r#""continuedInSessionId":"{session_id}""#);
+    let old_path = std::fs::read_dir(Path::new(transcript_path).parent()?)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "jsonl"))
+        .find(|path| tail(path).contains(&marker))?;
+    let old_id = old_path.file_stem()?.to_str()?;
+    let old_transcript = old_path.to_str()?;
+    let mut card = updated_card(old_id, old_transcript);
+    let last = last_uuid(old_transcript);
+    let copy_end = row_end(transcript_path, &last).unwrap_or_else(|| {
+        panic!("the continued transcript should copy row {last}; its format may have changed")
+    });
+    card["offset"] = json!(copy_end);
+    Some(card)
+}
+
+/// The last few kilobytes of a file, where a `continued-in` row would sit.
+fn tail(path: &Path) -> String {
+    let Ok(mut file) = File::open(path) else {
+        return String::new();
+    };
+    let length = file.metadata().map_or(0, |metadata| metadata.len());
+    let mut bytes = Vec::new();
+    file.seek(SeekFrom::Start(length.saturating_sub(TAIL_BYTES)))
+        .expect("transcript should be seekable");
+    file.read_to_end(&mut bytes)
+        .expect("transcript should be readable");
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// The uuid of the last row that has one.
+fn last_uuid(transcript_path: &str) -> String {
+    std::fs::read_to_string(transcript_path)
+        .expect("the continued transcript should be UTF-8 text")
+        .lines()
+        .rev()
+        .filter(|line| line.contains(r#""uuid":""#))
+        .find_map(|line| {
+            serde_json::from_str::<Value>(line).ok()?["uuid"]
+                .as_str()
+                .map(str::to_owned)
+        })
+        .expect("the continued transcript should have a row with a uuid")
+}
+
+/// The byte offset just past the row with this uuid.
+fn row_end(transcript_path: &str, uuid: &str) -> Option<u64> {
+    std::fs::read_to_string(transcript_path)
+        .ok()?
+        .split_inclusive('\n')
+        .scan(0, |end, line| {
+            *end += line.len();
+            Some((*end, line))
+        })
+        .find(|(_, line)| {
+            line.contains(uuid)
+                && serde_json::from_str::<Value>(line).is_ok_and(|row| row["uuid"] == uuid)
+        })
+        .map(|(end, _)| end as u64)
 }
 
 /// Fold one transcript row into the card.
