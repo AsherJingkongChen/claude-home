@@ -202,24 +202,37 @@ pub fn amount(count: usize, noun: &str) -> String {
     }
 }
 
-/// The share of all words, rounded to a whole percent; 0 when there are no words.
-fn percent(part: usize, whole: usize) -> usize {
-    (part * 100 + whole / 2).checked_div(whole).unwrap_or(0)
+/// Whole percents of `whole` that add up to exactly 100, by the largest remainder: every
+/// share is rounded down, and the points still missing go to the largest remainders.
+/// All zero when there are no words.
+fn shares(parts: [usize; 3], whole: usize) -> [usize; 3] {
+    if whole == 0 {
+        return [0; 3];
+    }
+    let mut floors = parts.map(|part| part * 100 / whole);
+    let mut order = [0, 1, 2];
+    order.sort_by_key(|&index| std::cmp::Reverse(parts[index] * 100 % whole));
+    let missing = 100 - floors.iter().sum::<usize>();
+    for &index in order.iter().take(missing) {
+        floors[index] += 1;
+    }
+    floors
 }
 
 /// One sentence: `The human sent 782 bytes, 224 words, 19 lines, 1 motion, in 86% Han,
 /// 9% Latin, 5% Math, and asked at least 1 question.`
 pub fn describe(sender: &str, stat: &Stat) -> String {
     let words = stat.words();
+    let [han, latin, math] = shares([stat.han, stat.latin, stat.math], words);
     format!(
         "The {sender} sent {}, {}, {}, {}, in {}% Han, {}% Latin, {}% Math, and asked at least {}.",
         amount(stat.bytes, "byte"),
         amount(words, "word"),
         amount(stat.lines, "line"),
         amount(stat.motions, "motion"),
-        percent(stat.han, words),
-        percent(stat.latin, words),
-        percent(stat.math, words),
+        han,
+        latin,
+        math,
         amount(stat.questions, "question"),
     )
 }
