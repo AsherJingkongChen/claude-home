@@ -6,6 +6,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+croner = { version = "4.0.2", default-features = false, features = ["jiff"] }
 jiff = "0.2.38"
 serde_json = "1"
 unicode-script = "0.5.8"

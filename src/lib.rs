@@ -90,15 +90,18 @@ pub fn header(moment: &Moment) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or("");
     let id: String = text(event, "session_id").chars().take(8).collect();
-    let offset = moment.now.offset().seconds();
+    format!("{project}-{id} ({}):", stamp(&moment.now))
+}
+
+/// The house time format: `10-29 01:50:09 +08`, with the minutes of the offset only when
+/// the zone has them.
+pub fn stamp(time: &Zoned) -> String {
+    let offset = time.offset().seconds();
     let zone = match offset % 3600 {
         0 => format!("{:+03}", offset / 3600),
-        _ => moment.now.strftime("%:z").to_string(),
+        _ => time.strftime("%:z").to_string(),
     };
-    format!(
-        "{project}-{id} ({} {zone}):",
-        moment.now.strftime("%m-%d %H:%M:%S")
-    )
+    format!("{} {zone}", time.strftime("%m-%d %H:%M:%S"))
 }
 
 /// `header line`, then the binary's own sentence on the next line when it has one.

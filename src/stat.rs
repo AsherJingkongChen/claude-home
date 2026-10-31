@@ -195,7 +195,7 @@ pub fn stat(text: &str) -> Stat {
 }
 
 /// `0 line`, `1 line`, `2 lines`.
-fn amount(count: usize, noun: &str) -> String {
+pub fn amount(count: usize, noun: &str) -> String {
     match count {
         0 | 1 => format!("{count} {noun}"),
         _ => format!("{count} {noun}s"),
