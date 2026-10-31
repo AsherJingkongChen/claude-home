@@ -40,16 +40,6 @@
         ]
       }
     ],
-    "PostToolBatch": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$HOME/.claude/hooks/bin/post_tool_batch\""
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

@@ -1,6 +1,6 @@
 //! post_tool_use: after a Read, an Edit, or a Write, tells the person and the model which
 //! lines it touched, from the tool's structured result, which the model never sees. Every
-//! other tool gets nothing. The sentence carries no header: PostToolBatch marks the time.
+//! other tool gets nothing. The sentence carries no header: UserPromptSubmit and Stop mark the time.
 
 use std::process::ExitCode;
 
