@@ -202,6 +202,26 @@ pub fn amount(count: usize, noun: &str) -> String {
     }
 }
 
+/// `745 bytes`, `1.2 MiB`, `12 KiB`: bytes below 1 KiB, then binary units with one
+/// decimal below 10.
+pub fn size(bytes: usize) -> String {
+    let units = ["KiB", "MiB", "GiB"];
+    let mut value = bytes as f64;
+    let mut unit = None;
+    for name in units {
+        if value < 1024.0 {
+            break;
+        }
+        value /= 1024.0;
+        unit = Some(name);
+    }
+    match unit {
+        None => amount(bytes, "byte"),
+        Some(name) if value < 10.0 => format!("{value:.1} {name}"),
+        Some(name) => format!("{value:.0} {name}"),
+    }
+}
+
 /// The share of all words, rounded to a whole percent; 0 when there are no words.
 fn percent(part: usize, whole: usize) -> usize {
     (part * 100 + whole / 2).checked_div(whole).unwrap_or(0)
