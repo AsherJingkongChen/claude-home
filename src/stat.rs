@@ -3,7 +3,8 @@
 //! A word is one Han character, or one run of Latin letters, or one run of Math: the ASCII
 //! characters that are neither letters nor space, the ones code and LaTeX are written in.
 //! Everything else (spaces, full-width punctuation, emoji, kana) separates words and counts
-//! toward no language. The two stars around a motion (`*rub rub*`) are markup, not Math.
+//! toward no language. The stars around a motion (`*rub rub*`) or a bold span (`**答案**`) are
+//! markup, not Math.
 
 use unicode_script::{Script, UnicodeScript};
 
@@ -79,25 +80,28 @@ fn words(text: &str) -> Vec<Kind> {
     found
 }
 
-/// The line with each motion's two stars taken out, and how many motions it held.
-/// A motion is a pair of stars around text that neither starts nor ends with a space,
-/// so `2 * 3 * 4` holds none and `*rub rub*` holds one.
+/// The line with the stars of each motion and each bold span taken out, and how many
+/// motions it held. A motion is a pair of stars around text that neither starts nor ends
+/// with a space, so `2 * 3 * 4` holds none and `*rub rub*` holds one; a bold span is the
+/// same with doubled stars, so `**答案**` holds none.
 fn unmark(line: &str) -> (String, usize) {
     let mut plain = String::new();
     let mut motions = 0;
     let mut rest = line;
     while let Some(open) = rest.find('*') {
-        let after = &rest[open + 1..];
-        let inner = after.find('*').map(|close| &after[..close]);
+        let bold = rest[open..].starts_with("**");
+        let marker = if bold { "**" } else { "*" };
+        let after = &rest[open + marker.len()..];
+        let inner = after.find(marker).map(|close| &after[..close]);
         match inner {
             Some(text) if !text.is_empty() && text.trim() == text => {
                 plain.push_str(&rest[..open]);
                 plain.push_str(text);
-                motions += 1;
-                rest = &after[text.len() + 1..];
+                motions += usize::from(!bold);
+                rest = &after[text.len() + marker.len()..];
             }
             _ => {
-                plain.push_str(&rest[..=open]);
+                plain.push_str(&rest[..open + marker.len()]);
                 rest = after;
             }
         }
