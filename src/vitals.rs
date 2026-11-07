@@ -284,22 +284,26 @@ pub fn hours_minutes(seconds: i64) -> String {
 }
 
 /// For the person: `On opus 5.5 High, ate 640k tokens, burped 147 times, slept once,
-/// alive 14h54m on average.`
+/// awake 14h54m on average.`
 pub fn human_line(vitals: &Vitals, now: &Zoned) -> String {
-    let awake = vitals
+    let on = on_clause(&[model_name(&vitals.model), capitalize(&vitals.effort)]);
+    capitalize(&format!(
+        "{on}ate {}k tokens, {}, {}, awake {} on average.",
+        vitals.context_tokens / 1000,
+        how_often("burped", vitals.turns),
+        how_often("slept", vitals.compactions),
+        hours_minutes(awake_seconds(vitals, now)),
+    ))
+}
+
+/// Seconds since the session started, shared by every waking stretch between sleeps.
+fn awake_seconds(vitals: &Vitals, now: &Zoned) -> i64 {
+    vitals
         .started
         .map(|started| {
             (now.timestamp().as_second() - started.as_second()) / (vitals.compactions as i64 + 1)
         })
-        .unwrap_or(0);
-    let on = on_clause(&[model_name(&vitals.model), capitalize(&vitals.effort)]);
-    capitalize(&format!(
-        "{on}ate {}k tokens, {}, {}, alive {} on average.",
-        vitals.context_tokens / 1000,
-        how_often("burped", vitals.turns),
-        how_often("slept", vitals.compactions),
-        hours_minutes(awake),
-    ))
+        .unwrap_or(0)
 }
 
 /// `On opus 5.5 High, ` from the non-empty parts, or "" when every part is empty, as in
@@ -317,26 +321,33 @@ fn on_clause(parts: &[String]) -> String {
     }
 }
 
-/// For the model: `On high effort, 20% of context left, 147 turns in, compacted once.`
-/// Context left steps 100%, 90%, ..., 10%: the used share floored to tens, taken from 100.
-/// A coarse step keeps the model from counting tokens; 10% is the cue to wrap up.
-pub fn model_line(vitals: &Vitals) -> String {
-    let used = vitals.context_tokens.min(vitals.compact_window);
-    let used_percent = (used * 100 / vitals.compact_window.max(1)).min(99);
-    let left = format!("{}%", 100 - used_percent / 10 * 10);
+/// Tokens auto compact keeps in hand below the window before it puts the session to sleep.
+const SLEEP_MARGIN: u64 = 50_000;
+
+/// For the model: `Next sleep in about 100k tokens, 147 turns in, slept once, awake 14h54m
+/// on average.` The distance to the next sleep is floored to tens of thousands, and under
+/// ten thousand it reads `soon`: a coarse, forward-facing step, so the model reads a day
+/// going on rather than a budget running out.
+pub fn model_line(vitals: &Vitals, now: &Zoned) -> String {
+    let until = vitals
+        .compact_window
+        .saturating_sub(SLEEP_MARGIN)
+        .saturating_sub(vitals.context_tokens)
+        / 10_000
+        * 10;
+    let next = if until == 0 {
+        "next sleep soon".to_owned()
+    } else {
+        format!("next sleep in about {until}k tokens")
+    };
     let turns = if vitals.turns == 1 {
         "1 turn".to_owned()
     } else {
         format!("{} turns", vitals.turns)
     };
-    let effort = if vitals.effort.is_empty() {
-        String::new()
-    } else {
-        format!("{} effort", vitals.effort)
-    };
     capitalize(&format!(
-        "{}{left} of context left, {turns} in, {}.",
-        on_clause(&[effort]),
-        how_often("compacted", vitals.compactions),
+        "{next}, {turns} in, {}, awake {} on average.",
+        how_often("slept", vitals.compactions),
+        hours_minutes(awake_seconds(vitals, now)),
     ))
 }

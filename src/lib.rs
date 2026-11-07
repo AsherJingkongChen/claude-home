@@ -116,7 +116,7 @@ fn compose(moment: &Moment, line: &str, sentence: &str) -> String {
 
 /// Text for the model: header, the model's vitals line, then the sentence.
 pub fn for_model(moment: &Moment, sentence: &str) -> String {
-    compose(moment, &model_line(&moment.vitals), sentence)
+    compose(moment, &model_line(&moment.vitals, &moment.now), sentence)
 }
 
 /// Text for the person: header, the person's vitals line, then the sentence.
