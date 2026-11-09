@@ -7,7 +7,7 @@
 ## Install
 
 ```bash
-cargo install --path . --root ~/.claude/hooks
+cargo install --locked --path . --root ~/.claude/hooks
 ```
 
 Plus, copy `"hooks"` from `.claude/settings.json` into `~/.claude/settings.json`.
