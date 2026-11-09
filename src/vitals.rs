@@ -353,10 +353,11 @@ fn on_clause(parts: &[String]) -> String {
 /// Tokens auto compact keeps in hand below the window before it puts the session to sleep.
 const SLEEP_MARGIN: u64 = 50_000;
 
-/// For the model: `Next sleep in about 100k tokens, 147 turns in, slept once, awake 14h54m
-/// on average.` The distance to the next sleep is floored to tens of thousands, and under
-/// ten thousand it reads `soon`: a coarse, forward-facing step, so the model reads a day
-/// going on rather than a budget running out.
+/// For the model: `On high effort, next sleep in about 100k tokens, 147 turns in, slept
+/// once, awake 14h54m on average.` The distance to the next sleep is floored to tens of
+/// thousands, and under ten thousand it reads `soon`: a coarse, forward-facing step, so the
+/// model reads a day going on rather than a budget running out. The effort is the last
+/// reply's, which the model cannot feel from inside; it is left out until a reply exists.
 pub fn model_line(vitals: &Vitals, now: &Zoned) -> String {
     let until = vitals
         .compact_window
@@ -374,8 +375,12 @@ pub fn model_line(vitals: &Vitals, now: &Zoned) -> String {
     } else {
         format!("{} turns", vitals.turns)
     };
+    let effort = match vitals.effort.as_str() {
+        "" => String::new(),
+        effort => format!("on {effort} effort, "),
+    };
     capitalize(&format!(
-        "{next}, {turns} in, {}, awake {} on average.",
+        "{effort}{next}, {turns} in, {}, awake {} on average.",
         how_often("slept", vitals.compactions),
         hours_minutes(awake_seconds(vitals, now)),
     ))
