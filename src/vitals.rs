@@ -16,8 +16,10 @@ const UNSET_WINDOW: u64 = 200_000;
 const TURN_MARKER: &str = r#""subtype":"turn_duration""#;
 const COMPACT_MARKER: &str = r#""subtype":"compact_boundary""#;
 const ASSISTANT_MARKER: &str = r#""type":"assistant""#;
-/// Rows read with no assistant usage among them before the format counts as changed.
-const DRIFT_ROWS: u64 = 100;
+/// Rows in a row with no assistant usage before the format counts as changed: before the
+/// session's first reply, and after it, where one compaction alone writes some 300.
+const QUIET_ROWS_BEFORE_REPLY: u64 = 200;
+const QUIET_ROWS_AFTER_REPLY: u64 = 1000;
 /// How much of a transcript's end is read to find its `continued-in` row.
 const TAIL_BYTES: u64 = 4096;
 
@@ -81,9 +83,13 @@ fn updated_card(session_id: &str, transcript_path: &str) -> Value {
         .expect("complete transcript rows should be UTF-8 text");
     let mut card = text.lines().fold(card, absorb);
     card["offset"] = json!(offset + complete as u64);
-    let rows = card["rows"].as_u64().unwrap_or(0);
-    if rows >= DRIFT_ROWS && card["model"].is_null() {
-        panic!("transcript has {rows} rows but no assistant usage; its format may have changed");
+    let quiet = card["quiet"].as_u64().unwrap_or(0);
+    let limit = match card["model"].is_null() {
+        true => QUIET_ROWS_BEFORE_REPLY,
+        false => QUIET_ROWS_AFTER_REPLY,
+    };
+    if quiet >= limit {
+        panic!("transcript has {quiet} rows in a row with no assistant usage; its format may have changed");
     }
     save_card(&card_path, &card);
     card
@@ -161,7 +167,7 @@ fn row_end(transcript_path: &str, uuid: &str) -> Option<u64> {
 
 /// Fold one transcript row into the card.
 fn absorb(mut card: Value, line: &str) -> Value {
-    card["rows"] = json!(card["rows"].as_u64().unwrap_or(0) + 1);
+    card["quiet"] = json!(card["quiet"].as_u64().unwrap_or(0) + 1);
     if line.contains(TURN_MARKER) {
         card["turns"] = json!(card["turns"].as_u64().unwrap_or(0) + 1);
     }
@@ -188,6 +194,7 @@ fn absorb(mut card: Value, line: &str) -> Value {
             && row["message"]["model"] != "<synthetic>"
             && usage.is_object()
         {
+            card["quiet"] = json!(0);
             card["model"] = row["message"]["model"].clone();
             card["effort"] = row["effort"].clone();
             card["context_tokens"] = json!(
