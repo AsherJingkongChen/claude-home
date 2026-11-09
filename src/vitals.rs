@@ -8,7 +8,11 @@ use std::path::{Path, PathBuf};
 use jiff::{Timestamp, Zoned};
 use serde_json::{Value, json};
 
-const CONTEXT_WINDOW: u64 = 1_000_000;
+/// The window when neither the environment nor the settings give one. Claude Code then
+/// falls back to the model's own context or a default of its own for that model, neither
+/// of which a hook can see. An unrecognized model gets 200k, and for any other model 200k
+/// only brings the cue early.
+const UNSET_WINDOW: u64 = 200_000;
 const TURN_MARKER: &str = r#""subtype":"turn_duration""#;
 const COMPACT_MARKER: &str = r#""subtype":"compact_boundary""#;
 const ASSISTANT_MARKER: &str = r#""type":"assistant""#;
@@ -242,7 +246,9 @@ fn vitals_from(card: &Value) -> Vitals {
 }
 
 /// The token count where auto compaction would fire: the env override, then the
-/// per-model and top-level settings, then the full context window.
+/// per-model and top-level settings, in the order Claude Code reads them, then
+/// [`UNSET_WINDOW`]. Claude Code also caps the result at the model's context, which is
+/// not known here.
 fn compact_window(model: &str) -> u64 {
     let from_env = std::env::var("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
         .ok()
@@ -256,7 +262,7 @@ fn compact_window(model: &str) -> u64 {
     from_env
         .or_else(|| settings["modelSettings"][model]["autoCompactWindow"].as_u64())
         .or_else(|| settings["autoCompactWindow"].as_u64())
-        .unwrap_or(CONTEXT_WINDOW)
+        .unwrap_or(UNSET_WINDOW)
 }
 
 /// `claude-opus-5-5` becomes `opus 5.5`; a trailing date or `[1m]` tag is dropped.
