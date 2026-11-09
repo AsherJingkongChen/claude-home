@@ -136,8 +136,37 @@ fn unstar(text: &str) -> (String, usize) {
     (plain, motions)
 }
 
+/// The text with every pair of backticks, and the code it holds, replaced by a space:
+/// what is left is where questions are asked.
+fn prose(text: &str) -> String {
+    let mut found = String::new();
+    let mut rest = text;
+    while let Some((before, _, after)) = code_span(rest) {
+        found.push_str(before);
+        found.push(' ');
+        rest = after;
+    }
+    found.push_str(rest);
+    found
+}
+
+/// How many questions a line of prose asks. A clause with no Han or Latin word in it, such
+/// as a lone `？`, asks nothing beside a clause that has one: `？讀那麼快嗎` asks once. A
+/// line of nothing but such clauses asks once at most.
+fn questions(prose: &str) -> usize {
+    let found = clauses(prose);
+    let (worded, bare): (Vec<&String>, Vec<&String>) = found
+        .iter()
+        .partition(|clause| words(clause).iter().any(|&kind| kind != Kind::Math));
+    match worded.is_empty() {
+        true => usize::from(bare.iter().any(|clause| asks(clause))),
+        false => worded.iter().filter(|clause| asks(clause)).count(),
+    }
+}
+
 /// The clauses of one line: cut after each clause end, and at a space between two Han
-/// characters, which is how a comma is typed without punctuation.
+/// characters, which is how a comma is typed without punctuation. A `?` with a letter or
+/// a digit right after it sits inside a URL or a name and ends nothing.
 fn clauses(line: &str) -> Vec<String> {
     let characters: Vec<char> = line.chars().collect();
     let mut found = vec![String::new()];
@@ -151,7 +180,9 @@ fn clauses(line: &str) -> Vec<String> {
             continue;
         }
         found.last_mut().expect("found starts non-empty").push(character);
-        if CLAUSE_ENDS.contains(&character) {
+        let inside_token = character == '?'
+            && characters.get(index + 1).is_some_and(char::is_ascii_alphanumeric);
+        if CLAUSE_ENDS.contains(&character) && !inside_token {
             found.push(String::new());
         }
     }
@@ -202,30 +233,32 @@ fn opens_with_word(text: &str, word: &str) -> bool {
 }
 
 pub fn stat(text: &str) -> Stat {
-    let lines: Vec<(String, usize)> = text
+    let lines: Vec<(String, usize, usize)> = text
         .lines()
         .filter(|line| !line.trim().is_empty())
         .scan(false, |fenced, line| {
             let fence = line.trim_start().starts_with("```");
             let code = *fenced || fence;
             *fenced ^= fence;
-            Some(if code { (line.to_owned(), 0) } else { unmark(line) })
+            Some(if code {
+                (line.to_owned(), 0, 0)
+            } else {
+                let (plain, motions) = unmark(line);
+                let asked = questions(&prose(&plain));
+                (plain, motions, asked)
+            })
         })
         .collect();
-    let kinds: Vec<Kind> = lines.iter().flat_map(|(plain, _)| words(plain)).collect();
+    let kinds: Vec<Kind> = lines.iter().flat_map(|(plain, _, _)| words(plain)).collect();
     let count = |wanted: Kind| kinds.iter().filter(|&&found| found == wanted).count();
     Stat {
         bytes: text.len(),
         lines: lines.len(),
-        motions: lines.iter().map(|(_, motions)| motions).sum(),
+        motions: lines.iter().map(|(_, motions, _)| motions).sum(),
         han: count(Kind::Han),
         latin: count(Kind::Latin),
         math: count(Kind::Math),
-        questions: lines
-            .iter()
-            .flat_map(|(plain, _)| clauses(plain))
-            .filter(|clause| asks(clause))
-            .count(),
+        questions: lines.iter().map(|(_, _, asked)| asked).sum(),
     }
 }
 
