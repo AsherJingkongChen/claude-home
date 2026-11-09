@@ -17,7 +17,7 @@ fn waiting(event: &Event) -> Option<String> {
     (jobs > 0).then(|| format!("Waiting on {}.", amount(jobs, "job")))
 }
 
-/// `Waking at 11-01 09:00:00 +08.` for the nearest scheduled wake, or nothing when none is
+/// `Waking at Sun 11-01 09:00:00 +08.` for the nearest scheduled wake, or nothing when none is
 /// scheduled. A schedule that does not parse as cron is left out.
 fn waking(event: &Event, now: &Zoned) -> Option<String> {
     event.input["session_crons"]
