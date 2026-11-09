@@ -66,7 +66,11 @@ pub fn read_moment() -> Moment {
         name: name.into(),
         input,
     };
-    let vitals = read_vitals(text(&event, "session_id"), text(&event, "transcript_path"));
+    let vitals = read_vitals(
+        text(&event, "session_id"),
+        text(&event, "transcript_path"),
+        text(&event, "model"),
+    );
     Moment {
         event,
         now: Zoned::now(),

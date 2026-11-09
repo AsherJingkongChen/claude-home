@@ -36,8 +36,11 @@ pub struct Vitals {
 /// transcript gained since the last call. A missing transcript gives zeros. Rows that no
 /// longer parse, or many rows with no assistant usage, mean the format changed: that
 /// panics with a message, which Claude Code shows as a hook error and moves on.
-pub fn read_vitals(session_id: &str, transcript_path: &str) -> Vitals {
-    vitals_from(&updated_card(session_id, transcript_path))
+/// `announced_model` is the model the event itself names, as SessionStart does; it stands
+/// in until the transcript holds a reply, so a session's opening line already finds the
+/// window set for its model.
+pub fn read_vitals(session_id: &str, transcript_path: &str, announced_model: &str) -> Vitals {
+    vitals_from(&updated_card(session_id, transcript_path), announced_model)
 }
 
 /// The card of a session, brought up to date with the rows its transcript gained since the
@@ -230,8 +233,8 @@ fn save_card(path: &Path, card: &Value) {
     std::fs::rename(&temporary, path).expect("the card should be renamable into place");
 }
 
-fn vitals_from(card: &Value) -> Vitals {
-    let model = card["model"].as_str().unwrap_or("").to_owned();
+fn vitals_from(card: &Value, announced_model: &str) -> Vitals {
+    let model = card["model"].as_str().unwrap_or(announced_model).to_owned();
     Vitals {
         compact_window: compact_window(&model),
         effort: card["effort"].as_str().unwrap_or("").to_owned(),
