@@ -83,22 +83,48 @@ fn words(text: &str) -> Vec<Kind> {
 /// The line with the stars of each motion and each bold span taken out, and how many
 /// motions it held. A motion is a pair of stars around text that neither starts nor ends
 /// with a space, so `2 * 3 * 4` holds none and `*rub rub*` holds one; a bold span is the
-/// same with doubled stars, so `**答案**` holds none.
+/// same with doubled stars, so `**答案**` holds none. Stars inside a pair of backticks are
+/// code and mark nothing, so a line that names `*.jsonl` and `*.tmp` holds no motion.
 fn unmark(line: &str) -> (String, usize) {
     let mut plain = String::new();
     let mut motions = 0;
     let mut rest = line;
+    while let Some((before, code, after)) = code_span(rest) {
+        let (text, count) = unstar(before);
+        plain.push_str(&text);
+        plain.push_str(code);
+        motions += count;
+        rest = after;
+    }
+    let (text, count) = unstar(rest);
+    plain.push_str(&text);
+    (plain, motions + count)
+}
+
+/// The text before the first pair of backticks, the pair with the code it holds, and the
+/// text after it. None when no pair is left.
+fn code_span(text: &str) -> Option<(&str, &str, &str)> {
+    let open = text.find('`')?;
+    let close = open + 1 + text[open + 1..].find('`')?;
+    Some((&text[..open], &text[open..=close], &text[close + 1..]))
+}
+
+/// [`unmark`] for text that holds no code.
+fn unstar(text: &str) -> (String, usize) {
+    let mut plain = String::new();
+    let mut motions = 0;
+    let mut rest = text;
     while let Some(open) = rest.find('*') {
         let bold = rest[open..].starts_with("**");
         let marker = if bold { "**" } else { "*" };
         let after = &rest[open + marker.len()..];
         let inner = after.find(marker).map(|close| &after[..close]);
         match inner {
-            Some(text) if !text.is_empty() && text.trim() == text => {
+            Some(span) if !span.is_empty() && span.trim() == span => {
                 plain.push_str(&rest[..open]);
-                plain.push_str(text);
+                plain.push_str(span);
                 motions += usize::from(!bold);
-                rest = &after[text.len() + marker.len()..];
+                rest = &after[span.len() + marker.len()..];
             }
             _ => {
                 plain.push_str(&rest[..open + marker.len()]);
@@ -179,7 +205,12 @@ pub fn stat(text: &str) -> Stat {
     let lines: Vec<(String, usize)> = text
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .map(unmark)
+        .scan(false, |fenced, line| {
+            let fence = line.trim_start().starts_with("```");
+            let code = *fenced || fence;
+            *fenced ^= fence;
+            Some(if code { (line.to_owned(), 0) } else { unmark(line) })
+        })
         .collect();
     let kinds: Vec<Kind> = lines.iter().flat_map(|(plain, _)| words(plain)).collect();
     let count = |wanted: Kind| kinds.iter().filter(|&&found| found == wanted).count();
