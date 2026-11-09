@@ -37,7 +37,9 @@ fn read(response: &Value) -> Option<String> {
 }
 
 /// `Edited SKILL.md at lines 29 to 35, adding 7 lines and removing 6.` The range covers the
-/// changed lines only, numbered in the new file, not the context around them.
+/// changed lines only, numbered in the new file, not the context around them. A row that
+/// opens with a backslash (`\ No newline at end of file`) is the diff's own note, not a
+/// line of either file.
 fn edit(response: &Value) -> Option<String> {
     let path = name(response["filePath"].as_str()?);
     let hunks = response["structuredPatch"].as_array()?;
@@ -57,6 +59,7 @@ fn edit(response: &Value) -> Option<String> {
                     removed += 1;
                     changed.push(line);
                 }
+                Some('\\') => {}
                 _ => line += 1,
             }
         }
