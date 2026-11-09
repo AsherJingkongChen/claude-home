@@ -79,7 +79,7 @@ pub fn text<'a>(event: &'a Event, key: &str) -> &'a str {
     event.input[key].as_str().unwrap_or("")
 }
 
-/// The shared opening of every message: `claude-home-bf6f8f2a (10-29 01:50:09 +08):`.
+/// The shared opening of every message: `claude-home-bf6f8f2a (Thu 10-29 01:50:09 +08):`.
 /// The project is where the session started (`CLAUDE_PROJECT_DIR`), so a `cd` does not move it.
 /// The event name stays out: Claude Code already prefixes what the model reads with it.
 pub fn header(moment: &Moment) -> String {
@@ -93,15 +93,16 @@ pub fn header(moment: &Moment) -> String {
     format!("{project}-{id} ({}):", stamp(&moment.now))
 }
 
-/// The house time format: `10-29 01:50:09 +08`, with the minutes of the offset only when
-/// the zone has them.
+/// The house time format: `Thu 10-29 01:50:09 +08`, with the minutes of the offset only
+/// when the zone has them. The weekday is there because a model has no calendar of its own
+/// to find it from the date.
 pub fn stamp(time: &Zoned) -> String {
     let offset = time.offset().seconds();
     let zone = match offset % 3600 {
         0 => format!("{:+03}", offset / 3600),
         _ => time.strftime("%:z").to_string(),
     };
-    format!("{} {zone}", time.strftime("%m-%d %H:%M:%S"))
+    format!("{} {zone}", time.strftime("%a %m-%d %H:%M:%S"))
 }
 
 /// `header line`, then the binary's own sentence on the next line when it has one.
