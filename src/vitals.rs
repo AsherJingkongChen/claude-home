@@ -37,7 +37,8 @@ pub fn read_vitals(session_id: &str, transcript_path: &str) -> Vitals {
 }
 
 /// The card of a session, brought up to date with the rows its transcript gained since the
-/// last call, and saved.
+/// last call, and saved. A row Claude Code is still writing waits for the next call; it is
+/// cut off before the text is decoded, since a half-written row can end inside a character.
 fn updated_card(session_id: &str, transcript_path: &str) -> Value {
     let Ok(mut transcript) = File::open(transcript_path) else {
         return json!({});
@@ -61,12 +62,17 @@ fn updated_card(session_id: &str, transcript_path: &str) -> Value {
     transcript
         .seek(SeekFrom::Start(offset))
         .expect("transcript should be seekable");
-    let mut fresh = String::new();
+    let mut fresh = Vec::new();
     transcript
-        .read_to_string(&mut fresh)
-        .expect("transcript should be UTF-8 text");
-    let complete = fresh.rfind('\n').map_or(0, |end| end + 1);
-    let mut card = fresh[..complete].lines().fold(card, absorb);
+        .read_to_end(&mut fresh)
+        .expect("transcript should be readable");
+    let complete = fresh
+        .iter()
+        .rposition(|&byte| byte == b'\n')
+        .map_or(0, |end| end + 1);
+    let text = std::str::from_utf8(&fresh[..complete])
+        .expect("complete transcript rows should be UTF-8 text");
+    let mut card = text.lines().fold(card, absorb);
     card["offset"] = json!(offset + complete as u64);
     let rows = card["rows"].as_u64().unwrap_or(0);
     if rows >= DRIFT_ROWS && card["model"].is_null() {
