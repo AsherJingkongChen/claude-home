@@ -68,6 +68,6 @@ fn main() -> ExitCode {
         .join(" ");
     send(merge([
         to_human(for_human(&moment, &sentence)),
-        to_model(&moment, for_model(&moment, &sentence)),
+        to_model(&moment.event, for_model(&moment, &sentence)),
     ]))
 }

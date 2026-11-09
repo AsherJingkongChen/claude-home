@@ -14,6 +14,6 @@ fn main() -> ExitCode {
     let sentence = format!("Ran {}.", amount(tools, "tool"));
     send(merge([
         to_human(for_human(&moment, &sentence)),
-        to_model(&moment, for_model(&moment, &sentence)),
+        to_model(&moment.event, for_model(&moment, &sentence)),
     ]))
 }

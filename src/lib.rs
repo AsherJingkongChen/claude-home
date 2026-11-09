@@ -4,9 +4,9 @@
 //! A binary knows its event, so it knows who reads each field it returns; event-specific
 //! fields (a Stop block, a PreToolUse deny) are written in that binary.
 //!
-//! This library is the station every binary shares. [`read_moment`] and [`send`] are its
-//! two ends, the only functions that touch the outside world; everything between them is a
-//! plain function from values to values.
+//! This library is the station every binary shares. [`read_event`], [`read_moment`], and
+//! [`send`] are its ends, the only functions that touch the outside world; everything
+//! between them is a plain function from values to values.
 //!
 //! Output goes four ways. Every piece is placed by [`top`] or [`specific`], and [`merge`]
 //! joins the pieces into the one object Claude Code reads.
@@ -50,10 +50,9 @@ pub struct Moment {
     pub vitals: Vitals,
 }
 
-/// Read the event from stdin, the clock, and the session's vitals. Panics with a message
-/// when stdin is not a JSON object with `hook_event_name`, which Claude Code reports as a
-/// non-blocking error.
-pub fn read_moment() -> Moment {
+/// Read the event from stdin. Panics with a message when stdin is not a JSON object with
+/// `hook_event_name`, which Claude Code reports as a non-blocking error.
+pub fn read_event() -> Event {
     let mut raw = String::new();
     std::io::stdin()
         .read_to_string(&mut raw)
@@ -62,10 +61,16 @@ pub fn read_moment() -> Moment {
     let name = input["hook_event_name"]
         .as_str()
         .expect("the event should carry hook_event_name");
-    let event = Event {
+    Event {
         name: name.into(),
         input,
-    };
+    }
+}
+
+/// Read the event, the clock, and the session's vitals. Reading the vitals brings the
+/// session's card up to date, so a binary that prints none of them reads the event alone.
+pub fn read_moment() -> Moment {
+    let event = read_event();
     let vitals = read_vitals(
         text(&event, "session_id"),
         text(&event, "transcript_path"),
@@ -136,9 +141,9 @@ pub fn top(field: &str, value: impl Into<Value>) -> Output {
 
 /// A field inside `hookSpecificOutput`, such as `additionalContext`, `watchPaths`, or
 /// `permissionDecision`, tagged with the event name Claude Code expects beside it.
-pub fn specific(moment: &Moment, field: &str, value: impl Into<Value>) -> Output {
+pub fn specific(event: &Event, field: &str, value: impl Into<Value>) -> Output {
     let inner = Output::from_iter([
-        ("hookEventName".to_owned(), moment.event.name.clone().into()),
+        ("hookEventName".to_owned(), event.name.clone().into()),
         (field.to_owned(), value.into()),
     ]);
     top("hookSpecificOutput", inner)
@@ -150,8 +155,8 @@ pub fn to_human(text: impl Into<String>) -> Output {
 }
 
 /// Context for the model, attached to its next call.
-pub fn to_model(moment: &Moment, text: impl Into<String>) -> Output {
-    specific(moment, "additionalContext", text.into())
+pub fn to_model(event: &Event, text: impl Into<String>) -> Output {
+    specific(event, "additionalContext", text.into())
 }
 
 /// Join output pieces into one object. Objects under the same key, such as two

@@ -1,13 +1,14 @@
 //! post_tool_use: after a Read, an Edit, or a Write, tells the person and the model which
 //! lines it touched, from the tool's structured result, which the model never sees. Every
 //! other tool gets nothing. The sentence carries no header: PostToolBatch marks the time.
+//! So the binary reads the event alone and leaves the session's card untouched.
 
 use std::process::ExitCode;
 
 use serde_json::Value;
 
 use claude_home::stat::amount;
-use claude_home::{Output, merge, read_moment, send, text, to_human, to_model};
+use claude_home::{Output, merge, read_event, send, text, to_human, to_model};
 
 /// The file name alone: the model knows which file it just touched, and the person sees
 /// the tool call, so the folders only lengthen the line.
@@ -88,17 +89,16 @@ fn write(response: &Value) -> Option<String> {
 }
 
 fn main() -> ExitCode {
-    let moment = read_moment();
-    let event = &moment.event;
+    let event = read_event();
     let response = &event.input["tool_response"];
-    let sentence = match text(event, "tool_name") {
+    let sentence = match text(&event, "tool_name") {
         "Read" => read(response),
         "Edit" => edit(response),
         "Write" => write(response),
         _ => None,
     };
     send(match sentence {
-        Some(sentence) => merge([to_human(sentence.clone()), to_model(&moment, sentence)]),
+        Some(sentence) => merge([to_human(sentence.clone()), to_model(&event, sentence)]),
         None => Output::new(),
     })
 }
