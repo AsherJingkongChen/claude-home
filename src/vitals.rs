@@ -152,15 +152,22 @@ fn absorb(mut card: Value, line: &str) -> Value {
     if line.contains(TURN_MARKER) {
         card["turns"] = json!(card["turns"].as_u64().unwrap_or(0) + 1);
     }
-    if line.contains(COMPACT_MARKER) {
+    let compacted = line.contains(COMPACT_MARKER);
+    if compacted {
         card["compactions"] = json!(card["compactions"].as_u64().unwrap_or(0) + 1);
     }
     let needs_start = card["started"].is_null();
-    if needs_start || line.contains(ASSISTANT_MARKER) {
+    if needs_start || compacted || line.contains(ASSISTANT_MARKER) {
         let row: Value = serde_json::from_str(line)
             .unwrap_or_else(|error| panic!("transcript row should be JSON: {error}"));
         if needs_start && row["timestamp"].is_string() {
             card["started"] = row["timestamp"].clone();
+        }
+        // Until the first reply after a compaction, the last usage is still the full
+        // context from before it; the boundary row says what the context became.
+        if row["subtype"] == "compact_boundary" {
+            card["context_tokens"] =
+                json!(row["compactMetadata"]["postTokens"].as_u64().unwrap_or(0));
         }
         let usage = &row["message"]["usage"];
         if row["type"] == "assistant"
