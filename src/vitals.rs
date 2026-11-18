@@ -350,8 +350,9 @@ fn on_clause(parts: &[String]) -> String {
     }
 }
 
-/// Tokens auto compact keeps in hand below the window before it puts the session to sleep.
-const SLEEP_MARGIN: u64 = 50_000;
+/// Tokens auto compact keeps in hand below the window before it puts the session to sleep:
+/// with an 800k window the session was seen to sleep at 765k on 2026-11-19.
+const SLEEP_MARGIN: u64 = 35_000;
 
 /// For the model: `On high effort, next sleep in about 100k tokens, 147 turns in, slept
 /// once, awake 14h54m on average.` The distance to the next sleep is floored to tens of
